@@ -48,7 +48,6 @@ const Styles = () => (
   `}</style>
 );
 
-/* ---------- estela / signature element ---------- */
 const Swoosh = ({ flip }) => (
   <svg className="sp-swoosh" viewBox="0 0 400 34" preserveAspectRatio="none" style={flip ? { transform: "scaleY(-1)" } : {}}>
     <defs>
@@ -64,7 +63,6 @@ const Swoosh = ({ flip }) => (
   </svg>
 );
 
-/* ---------- utilidades ---------- */
 const uid = () => {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
     const r = Math.random() * 16 | 0;
@@ -105,7 +103,6 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const PAGOS = ["Cash", "Zelle", "Cheque", "Depósito Directo"];
 const TIPOS_CLIENTE = ["Privado", "All in One"];
 
-/* rangos de fecha para reportes */
 const getRango = (periodo, ref) => {
   const d = new Date(ref + "T00:00:00");
   let start, end;
@@ -127,32 +124,34 @@ const getRango = (periodo, ref) => {
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 };
 
-/* ---------- App principal ---------- */
 export default function App() {
   const [clientes, setClientes] = useState([]);
   const [trabajos, setTrabajos] = useState([]);
   const [agendadores, setAgendadores] = useState(["Shirley Mafla", "Juan C Parra"]);
   const [vista, setVista] = useState("agenda");
-  const [modal, setModal] = useState(null); // {tipo: 'cliente'|'trabajo', data?}
-  const [agendaFiltro, setAgendaFiltro] = useState("proximos"); // proximos | todos | pendientes
+  const [modal, setModal] = useState(null);
+  const [agendaFiltro, setAgendaFiltro] = useState("proximos");
   const [busquedaCliente, setBusquedaCliente] = useState("");
-
   const [cargando, setCargando] = useState(true);
 
-  /* mapeo db <-> app */
+  /* CAMBIO 1: agrega serieTipo */
   const trabajoDesdeDb = (r) => ({
     id: r.id, clienteId: r.cliente_id, fecha: r.fecha, hora: r.hora?.slice(0, 5),
     duracion: Number(r.duracion), valor: Number(r.valor), pago: r.pago,
-    estado: r.estado, agendadoPor: r.agendado_por, notas: r.notas || "", google_event_id: r.google_event_id || null,
-    serieId: r.serie_id || null
+    estado: r.estado, agendadoPor: r.agendado_por, notas: r.notas || "",
+    google_event_id: r.google_event_id || null,
+    serieId: r.serie_id || null,
+    serieTipo: r.serie_tipo || null
   });
+  /* CAMBIO 2: agrega serie_tipo */
   const trabajoHaciaDb = (t) => ({
     cliente_id: t.clienteId, fecha: t.fecha, hora: t.hora, duracion: t.duracion,
     valor: t.valor, pago: t.pago, estado: t.estado, agendado_por: t.agendadoPor, notas: t.notas || "",
-    serie_id: t.serieId || null
+    serie_id: t.serieId || null,
+    serie_tipo: t.serieTipo || null
   });
 
-  /* sincronizar con Google Calendar (silencioso, no bloquea la UI) */
+  /* CAMBIO 3: agrega tipo_cliente y serie_tipo al payload */
   const sincronizarCalendar = async (action, trabajoCompleto, googleEventId) => {
     try {
       const cliente = clientes.find(c => c.id === trabajoCompleto.clienteId);
@@ -171,6 +170,8 @@ export default function App() {
           cliente_nombre: cliente?.nombre || "",
           cliente_telefono: cliente?.telefono || "",
           cliente_direccion: cliente?.direccion || "",
+          tipo_cliente: cliente?.tipo_cliente || "",
+          serie_tipo: trabajoCompleto.serieTipo || "",
         }
       };
       const { data, error } = await supabase.functions.invoke("sync-calendar", { body: payload });
@@ -182,7 +183,6 @@ export default function App() {
     }
   };
 
-  /* cargar datos iniciales */
   useEffect(() => {
     const cargar = async () => {
       const [{ data: c }, { data: t }, { data: a }] = await Promise.all([
@@ -198,7 +198,6 @@ export default function App() {
     cargar();
   }, []);
 
-  /* ---------- acciones clientes ---------- */
   const guardarCliente = async (data) => {
     const { id, ...resto } = data;
     if (id) {
@@ -210,6 +209,7 @@ export default function App() {
     }
     setModal(null);
   };
+
   const borrarCliente = async (id) => {
     if (trabajos.some(t => t.clienteId === id)) {
       if (!window.confirm("Este cliente tiene trabajos agendados. ¿Eliminar de todas formas? (los trabajos quedarán sin cliente)")) return;
@@ -254,7 +254,6 @@ export default function App() {
     e.target.value = "";
   };
 
-  /* ---------- helpers de repetición ---------- */
   const sumarDias = (fechaISO, dias) => {
     const [y, m, d] = fechaISO.split("-").map(Number);
     const fecha = new Date(y, m - 1, d + dias);
@@ -270,55 +269,28 @@ export default function App() {
     const fechas = [fechaInicial];
     if (repetir === "ninguna") return fechas;
     if (repetir === "2semanas") {
-      // cada 14 días por 1 año (~26 repeticiones)
       let f = fechaInicial;
-      for (let i = 0; i < 26; i++) {
-        f = sumarDias(f, 14);
-        fechas.push(f);
-      }
+      for (let i = 0; i < 26; i++) { f = sumarDias(f, 14); fechas.push(f); }
     } else if (repetir === "3semanas") {
-      // cada 21 días por 1 año (~17 repeticiones)
       let f = fechaInicial;
-      for (let i = 0; i < 17; i++) {
-        f = sumarDias(f, 21);
-        fechas.push(f);
-      }
-    } else if (repetir === "15dias") {
-      // cada 15 días por 1 año (~24 repeticiones)
-      let f = fechaInicial;
-      for (let i = 0; i < 24; i++) {
-        f = sumarDias(f, 15);
-        fechas.push(f);
-      }
+      for (let i = 0; i < 17; i++) { f = sumarDias(f, 21); fechas.push(f); }
     } else if (repetir === "mensual") {
-      // cada 28 días (4 semanas exactas) por 1 año (~13 repeticiones)
       let f = fechaInicial;
-      for (let i = 0; i < 13; i++) {
-        f = sumarDias(f, 28);
-        fechas.push(f);
-      }
+      for (let i = 0; i < 13; i++) { f = sumarDias(f, 28); fechas.push(f); }
     } else if (repetir === "anual_semanal") {
-      // cada 7 días por 52 semanas
       let f = fechaInicial;
-      for (let i = 0; i < 51; i++) {
-        f = sumarDias(f, 7);
-        fechas.push(f);
-      }
+      for (let i = 0; i < 51; i++) { f = sumarDias(f, 7); fechas.push(f); }
     }
     return fechas;
   };
 
-  /* ---------- acciones trabajos ---------- */
   const guardarTrabajo = async (data) => {
     const { id, repetir, aplicarA, ...resto } = data;
 
-    // EDICIÓN de un trabajo existente
     if (id) {
       const payload = trabajoHaciaDb(resto);
       const original = trabajos.find(t => t.id === id);
-
       if (original?.serieId && aplicarA === "futuros") {
-        // actualizar este y todos los futuros de la misma serie (misma hora/cliente/valor/etc, cada uno conserva su fecha)
         const futuros = trabajos.filter(t => t.serieId === original.serieId && t.fecha >= original.fecha);
         for (const t of futuros) {
           const payloadT = { ...payload, fecha: t.fecha };
@@ -351,13 +323,14 @@ export default function App() {
       return;
     }
 
-    // CREACIÓN: una o varias (según repetir)
     const fechas = generarFechasRepeticion(resto.fecha, repetir || "ninguna");
     const serieId = fechas.length > 1 ? uid() : null;
+    /* CAMBIO 4: calcular y guardar serieTipo */
+    const serieTipo = fechas.length > 1 ? (repetir || null) : null;
     const nuevosTrabajos = [];
 
     for (const fecha of fechas) {
-      const payload = { ...trabajoHaciaDb(resto), fecha, serie_id: serieId };
+      const payload = { ...trabajoHaciaDb(resto), fecha, serie_id: serieId, serie_tipo: serieTipo };
       const { data: creado } = await supabase.from("trabajos").insert(payload).select().single();
       if (creado) {
         const tf = trabajoDesdeDb(creado);
@@ -384,23 +357,21 @@ export default function App() {
       const idsFuturos = new Set(futuros.map(t => t.id));
       setTrabajos(prev => prev.filter(t => !idsFuturos.has(t.id)));
     } else {
-      if (trabajo?.google_event_id) {
-        sincronizarCalendar("delete", trabajo, trabajo.google_event_id);
-      }
+      if (trabajo?.google_event_id) sincronizarCalendar("delete", trabajo, trabajo.google_event_id);
       await supabase.from("trabajos").delete().eq("id", id);
       setTrabajos(prev => prev.filter(t => t.id !== id));
     }
   };
+
   const toggleEstado = async (id) => {
     const actual = trabajos.find(t => t.id === id);
     const nuevoEstado = actual.estado === "Completado" ? "Pendiente" : "Completado";
     await supabase.from("trabajos").update({ estado: nuevoEstado }).eq("id", id);
     const actualizado = { ...actual, estado: nuevoEstado };
     setTrabajos(prev => prev.map(t => t.id === id ? actualizado : t));
-    if (actual.google_event_id) {
-      sincronizarCalendar("update", actualizado, actual.google_event_id);
-    }
+    if (actual.google_event_id) sincronizarCalendar("update", actualizado, actual.google_event_id);
   };
+
   const agregarAgendador = async (nombre) => {
     const { data: creado } = await supabase.from("agendadores").insert({ nombre }).select().single();
     if (creado) setAgendadores(prev => [...prev, creado.nombre]);
@@ -411,7 +382,6 @@ export default function App() {
     setAgendadores(prev => prev.filter(a => a !== nombre));
   };
 
-  /* ---------- datos derivados ---------- */
   const clientesPorId = useMemo(() => {
     const m = {};
     clientes.forEach(c => m[c.id] = c);
@@ -480,13 +450,10 @@ export default function App() {
           <VistaReportes trabajos={trabajos} clientesPorId={clientesPorId} />
         )}
       </main>
-
       <button className="sp-fab" onClick={() => setModal({ tipo: "trabajo" })} aria-label="Agendar trabajo">
         <Plus size={26} />
       </button>
-
       <BottomNav vista={vista} setVista={setVista} />
-
       {modal?.tipo === "cliente" && (
         <ModalCliente data={modal.data} onGuardar={guardarCliente} onCerrar={() => setModal(null)} />
       )}
@@ -520,7 +487,6 @@ export default function App() {
   );
 }
 
-/* ---------- header ---------- */
 const Header = () => (
   <div style={{ background: "var(--teal)", color: "#fff", paddingTop: 22, paddingBottom: 6 }}>
     <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 16px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -536,7 +502,6 @@ const Header = () => (
   </div>
 );
 
-/* ---------- navegación inferior ---------- */
 const BottomNav = ({ vista, setVista }) => (
   <nav className="sp-bottomnav">
     <button className={`sp-navbtn ${vista === "agenda" ? "active" : ""}`} onClick={() => setVista("agenda")}>
@@ -551,26 +516,18 @@ const BottomNav = ({ vista, setVista }) => (
   </nav>
 );
 
-/* ---------- vista agenda ---------- */
 const VistaAgenda = ({ grupos, clientesPorId, filtro, setFiltro, onEditar, onBorrar, onToggle }) => {
   const dias = Object.keys(grupos).sort();
   return (
     <div style={{ paddingTop: 16 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto" }} className="sp-scroll">
         {[["proximos", "Próximos"], ["pendientes", "Pendientes"], ["todos", "Todos"]].map(([k, label]) => (
-          <button key={k} onClick={() => setFiltro(k)}
-            className="sp-btn"
-            style={{
-              padding: "8px 16px", fontSize: 13, whiteSpace: "nowrap",
-              background: filtro === k ? "var(--teal)" : "#fff",
-              color: filtro === k ? "#fff" : "var(--charcoal)",
-              border: filtro === k ? "none" : "1.5px solid #E2DCD3"
-            }}>
+          <button key={k} onClick={() => setFiltro(k)} className="sp-btn"
+            style={{ padding: "8px 16px", fontSize: 13, whiteSpace: "nowrap", background: filtro === k ? "var(--teal)" : "#fff", color: filtro === k ? "#fff" : "var(--charcoal)", border: filtro === k ? "none" : "1.5px solid #E2DCD3" }}>
             {label}
           </button>
         ))}
       </div>
-
       {dias.length === 0 && (
         <div className="sp-card" style={{ padding: "40px 20px", textAlign: "center", color: "#A6B5AF" }}>
           <Calendar size={32} style={{ marginBottom: 10 }} />
@@ -578,7 +535,6 @@ const VistaAgenda = ({ grupos, clientesPorId, filtro, setFiltro, onEditar, onBor
           <div style={{ fontSize: 13, marginTop: 4 }}>Toca el botón + para agendar el primer trabajo</div>
         </div>
       )}
-
       {dias.map(fecha => (
         <div key={fecha} style={{ marginBottom: 22 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--teal)", textTransform: "capitalize", marginBottom: 8, paddingLeft: 4 }}>
@@ -612,14 +568,12 @@ const TrabajoCard = ({ t, cliente, onEditar, onBorrar, onToggle }) => {
           {completado ? "Completado" : "Pendiente"}
         </button>
       </div>
-
       {cliente?.direccion && (
         <a href={mapsUrl(cliente.direccion)} target="_blank" rel="noreferrer"
           style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 13, color: "var(--teal)", textDecoration: "none" }}>
           <MapPin size={14} /> <span style={{ flex: 1 }}>{cliente.direccion}</span>
         </a>
       )}
-
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
         {cliente?.telefono && (
           <a href={telUrl(cliente.telefono)} className="sp-btn sp-btn-ghost" style={{ padding: "7px 12px", fontSize: 13, display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
@@ -640,9 +594,7 @@ const TrabajoCard = ({ t, cliente, onEditar, onBorrar, onToggle }) => {
           </div>
         )}
       </div>
-
       {t.notas && <div style={{ marginTop: 8, fontSize: 13, color: "#7A8B85", fontStyle: "italic" }}>{t.notas}</div>}
-
       <div style={{ display: "flex", gap: 8, marginTop: 12, borderTop: "1px solid #F1EBE2", paddingTop: 10 }}>
         <button onClick={onEditar} className="sp-btn" style={{ background: "none", color: "var(--teal)", fontSize: 13, padding: "4px 8px", display: "flex", alignItems: "center", gap: 4 }}>
           <Edit2 size={14} /> Editar
@@ -655,7 +607,6 @@ const TrabajoCard = ({ t, cliente, onEditar, onBorrar, onToggle }) => {
   );
 };
 
-/* ---------- vista clientes ---------- */
 const VistaClientes = ({ clientes, busqueda, setBusqueda, onNuevo, onEditar, onBorrar, onAgendar, onImportar }) => (
   <div style={{ paddingTop: 16 }}>
     <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -664,19 +615,16 @@ const VistaClientes = ({ clientes, busqueda, setBusqueda, onNuevo, onEditar, onB
         <Plus size={16} /> Nuevo
       </button>
     </div>
-
     <label className="sp-btn sp-btn-ghost" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", marginBottom: 16, fontSize: 13 }}>
       <Upload size={16} /> Importar desde hoja de cálculo (Excel / CSV)
       <input type="file" accept=".xlsx,.xls,.csv" onChange={onImportar} style={{ display: "none" }} />
     </label>
-
     {clientes.length === 0 && (
       <div className="sp-card" style={{ padding: "40px 20px", textAlign: "center", color: "#A6B5AF" }}>
         <Users size={32} style={{ marginBottom: 10 }} />
         <div style={{ fontWeight: 600, color: "var(--charcoal)" }}>Sin clientes todavía</div>
       </div>
     )}
-
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {clientes.map(c => (
         <div key={c.id} className="sp-card" style={{ padding: 14 }}>
@@ -714,15 +662,12 @@ const VistaClientes = ({ clientes, busqueda, setBusqueda, onNuevo, onEditar, onB
   </div>
 );
 
-/* ---------- vista reportes ---------- */
 const VistaReportes = ({ trabajos, clientesPorId }) => {
   const [periodo, setPeriodo] = useState("semana");
   const [refFecha, setRefFecha] = useState(todayISO());
-
   const { start, end } = getRango(periodo, refFecha);
   const filtrados = trabajos.filter(t => t.fecha >= start && t.fecha <= end)
     .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
-
   const total = filtrados.reduce((s, t) => s + Number(t.valor || 0), 0);
   const completados = filtrados.filter(t => t.estado === "Completado");
   const pendientes = filtrados.filter(t => t.estado === "Pendiente");
@@ -743,41 +688,26 @@ const VistaReportes = ({ trabajos, clientesPorId }) => {
 
   const descargar = () => {
     const data = filtrados.map(t => ({
-      Fecha: t.fecha,
-      Hora: fmtHora12(t.hora),
-      "Hora fin": addHoras(t.hora, t.duracion),
-      "Duración (h)": t.duracion,
-      Cliente: clientesPorId[t.clienteId]?.nombre || "",
+      Fecha: t.fecha, Hora: fmtHora12(t.hora), "Hora fin": addHoras(t.hora, t.duracion),
+      "Duración (h)": t.duracion, Cliente: clientesPorId[t.clienteId]?.nombre || "",
       "Tipo de cliente": clientesPorId[t.clienteId]?.tipo_cliente || "",
       Teléfono: clientesPorId[t.clienteId]?.telefono || "",
       Dirección: clientesPorId[t.clienteId]?.direccion || "",
-      Valor: Number(t.valor || 0),
-      "Método de pago": t.pago,
-      Estado: t.estado,
-      "Agendado por": t.agendadoPor,
-      Notas: t.notas || ""
+      Valor: Number(t.valor || 0), "Método de pago": t.pago, Estado: t.estado,
+      "Agendado por": t.agendadoPor, Notas: t.notas || ""
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     ws["!cols"] = [{ wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 8 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 30 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 24 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Trabajos");
-
     const resumen = XLSX.utils.aoa_to_sheet([
-      ["ShinyPro Clean - Resumen"],
-      ["Período", `${start} a ${end}`],
-      [],
-      ["Total facturado", total],
-      ["Trabajos completados", completados.length],
-      ["Trabajos pendientes", pendientes.length],
-      [],
-      ["Por método de pago"],
-      ...PAGOS.map(p => [p, porPago[p]]),
-      [],
+      ["ShinyPro Clean - Resumen"], ["Período", `${start} a ${end}`], [],
+      ["Total facturado", total], ["Trabajos completados", completados.length], ["Trabajos pendientes", pendientes.length], [],
+      ["Por método de pago"], ...PAGOS.map(p => [p, porPago[p]]), [],
       ["Por tipo de cliente", "Cantidad", "Total"],
       ...Object.entries(porTipo).map(([tipo, info]) => [tipo, info.cantidad, info.total])
     ]);
     XLSX.utils.book_append_sheet(wb, resumen, "Resumen");
-
     XLSX.writeFile(wb, `ShinyProClean_${periodo}_${start}_a_${end}.xlsx`);
   };
 
@@ -788,24 +718,16 @@ const VistaReportes = ({ trabajos, clientesPorId }) => {
         <div style={{ display: "flex", gap: 8, marginBottom: 12, overflowX: "auto" }} className="sp-scroll">
           {[["semana", "Semanal"], ["mes", "Mensual"], ["semestre", "Semestral"], ["año", "Anual"]].map(([k, label]) => (
             <button key={k} onClick={() => setPeriodo(k)} className="sp-btn"
-              style={{
-                padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap",
-                background: periodo === k ? "var(--teal)" : "#fff",
-                color: periodo === k ? "#fff" : "var(--charcoal)",
-                border: periodo === k ? "none" : "1.5px solid #E2DCD3"
-              }}>{label}</button>
+              style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap", background: periodo === k ? "var(--teal)" : "#fff", color: periodo === k ? "#fff" : "var(--charcoal)", border: periodo === k ? "none" : "1.5px solid #E2DCD3" }}>{label}</button>
           ))}
         </div>
         <span className="sp-label">Fecha de referencia</span>
         <input type="date" className="sp-input" value={refFecha} onChange={e => setRefFecha(e.target.value)} />
         <div style={{ fontSize: 13, color: "#7A8B85", marginTop: 8 }}>Rango: {start} a {end}</div>
       </div>
-
       <div className="sp-card" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: "#7A8B85", marginBottom: 4 }}>Total facturado en el período</div>
-        <div className="sp-display" style={{ fontSize: 32, fontWeight: 600, color: "var(--teal)" }}>
-          ${total.toFixed(2)}
-        </div>
+        <div className="sp-display" style={{ fontSize: 32, fontWeight: 600, color: "var(--teal)" }}>${total.toFixed(2)}</div>
         <div style={{ display: "flex", gap: 16, marginTop: 12, fontSize: 13 }}>
           <div><span className="sp-tag sp-tag-completado">{completados.length} completados</span></div>
           <div><span className="sp-tag sp-tag-pendiente">{pendientes.length} pendientes</span></div>
@@ -832,7 +754,6 @@ const VistaReportes = ({ trabajos, clientesPorId }) => {
           </div>
         )}
       </div>
-
       <button onClick={descargar} className="sp-btn sp-btn-primary" style={{ width: "100%", padding: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 24 }}>
         <FileSpreadsheet size={18} /> Descargar Excel ({filtrados.length} registros)
       </button>
@@ -840,7 +761,6 @@ const VistaReportes = ({ trabajos, clientesPorId }) => {
   );
 };
 
-/* ---------- modal cliente ---------- */
 const ModalCliente = ({ data, onGuardar, onCerrar }) => {
   const [form, setForm] = useState(data || { nombre: "", telefono: "", direccion: "", tipo_cliente: "", notas: "" });
   return (
@@ -859,19 +779,13 @@ const ModalCliente = ({ data, onGuardar, onCerrar }) => {
             <div style={{ display: "flex", gap: 8 }}>
               {TIPOS_CLIENTE.map(t => (
                 <button key={t} type="button" onClick={() => setForm({ ...form, tipo_cliente: t })} className="sp-btn"
-                  style={{
-                    flex: 1, padding: 10, fontSize: 13,
-                    background: form.tipo_cliente === t ? "var(--teal)" : "#fff",
-                    color: form.tipo_cliente === t ? "#fff" : "var(--charcoal)",
-                    border: form.tipo_cliente === t ? "none" : "1.5px solid #E2DCD3"
-                  }}>{t}</button>
+                  style={{ flex: 1, padding: 10, fontSize: 13, background: form.tipo_cliente === t ? "var(--teal)" : "#fff", color: form.tipo_cliente === t ? "#fff" : "var(--charcoal)", border: form.tipo_cliente === t ? "none" : "1.5px solid #E2DCD3" }}>{t}</button>
               ))}
             </div>
           </div>
           <div><span className="sp-label">Notas</span>
             <input className="sp-input" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Opcional" /></div>
-          <button className="sp-btn sp-btn-primary" style={{ padding: 14 }}
-            disabled={!form.nombre.trim()}
+          <button className="sp-btn sp-btn-primary" style={{ padding: 14 }} disabled={!form.nombre.trim()}
             onClick={() => onGuardar({ ...form, id: data?.id })}>
             Guardar cliente
           </button>
@@ -881,7 +795,6 @@ const ModalCliente = ({ data, onGuardar, onCerrar }) => {
   );
 };
 
-/* ---------- modal trabajo ---------- */
 const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onAgregarAgendador, onBorrarAgendador, onGuardar, onCrearClienteRapido, onCerrar }) => {
   const clienteInicial = clientePreseleccionado || (data?.clienteId ? clientes.find(c => c.id === data.clienteId) : clientes[0]);
   const [form, setForm] = useState(data || {
@@ -917,8 +830,7 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
       await onGuardar({
         ...form, clienteId, id: data?.id,
         duracion: Number(form.duracion) || 4, valor: form.valor === "" ? 0 : Number(form.valor),
-        repetir: data ? undefined : repetir,
-        aplicarA
+        repetir: data ? undefined : repetir, aplicarA
       });
     } finally {
       setGuardando(false);
@@ -926,11 +838,7 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
   };
 
   const handleGuardar = async () => {
-    // si es edición de un trabajo que pertenece a una serie, preguntar antes
-    if (data?.id && data?.serieId) {
-      setMostrarConfirmSerie(true);
-      return;
-    }
+    if (data?.id && data?.serieId) { setMostrarConfirmSerie(true); return; }
     await guardarConOpcion(undefined);
   };
 
@@ -939,18 +847,13 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
       <div className="sp-modal" onClick={e => e.stopPropagation()}>
         <ModalHeader titulo={data ? "Editar trabajo" : "Agendar trabajo"} onCerrar={onCerrar} />
         <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 16 }}>
-
           <div>
             <span className="sp-label">Cliente</span>
             {!creandoCliente ? (
               <div style={{ position: "relative" }}>
-                <input
-                  className="sp-input"
-                  placeholder="Buscar cliente por nombre..."
-                  value={busquedaCliente}
+                <input className="sp-input" placeholder="Buscar cliente por nombre..." value={busquedaCliente}
                   onChange={e => { setBusquedaCliente(e.target.value); setMostrarSugerencias(true); setForm({ ...form, clienteId: "" }); }}
-                  onFocus={() => setMostrarSugerencias(true)}
-                />
+                  onFocus={() => setMostrarSugerencias(true)} />
                 {form.clienteId && clienteSeleccionado && (
                   <div style={{ marginTop: 6, padding: "8px 12px", background: "var(--mint-light)", borderRadius: 8, fontSize: 13, color: "var(--teal)", fontWeight: 600 }}>
                     ✓ {clienteSeleccionado.nombre} {clienteSeleccionado.tipo_cliente ? `· ${clienteSeleccionado.tipo_cliente}` : ""}
@@ -986,20 +889,17 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
               </div>
             )}
           </div>
-
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}><span className="sp-label">Fecha</span>
               <input type="date" className="sp-input" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></div>
             <div style={{ flex: 1 }}><span className="sp-label">Hora inicio</span>
               <input type="time" className="sp-input" value={form.hora} onChange={e => setForm({ ...form, hora: e.target.value })} /></div>
           </div>
-
           <div>
             <span className="sp-label">Duración (horas)</span>
             <input type="number" min="0.5" step="0.5" className="sp-input" value={form.duracion} onChange={e => setForm({ ...form, duracion: e.target.value })} />
             <div style={{ fontSize: 12, color: "#A6B5AF", marginTop: 4 }}>Termina aprox. {addHoras(form.hora, Number(form.duracion) || 0)}</div>
           </div>
-
           <div style={{ display: "flex", gap: 10 }}>
             <div style={{ flex: 1 }}><span className="sp-label">Valor cobrado ($)</span>
               <input type="number" min="0" step="0.01" className="sp-input" value={form.valor} onChange={e => setForm({ ...form, valor: e.target.value })} placeholder="0.00" /></div>
@@ -1008,22 +908,15 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
                 {PAGOS.map(p => <option key={p} value={p}>{p}</option>)}
               </select></div>
           </div>
-
           <div>
             <span className="sp-label">Estado</span>
             <div style={{ display: "flex", gap: 8 }}>
               {["Pendiente", "Completado"].map(s => (
                 <button key={s} onClick={() => setForm({ ...form, estado: s })} className="sp-btn"
-                  style={{
-                    flex: 1, padding: 10, fontSize: 13,
-                    background: form.estado === s ? (s === "Completado" ? "var(--teal)" : "var(--coral)") : "#fff",
-                    color: form.estado === s ? "#fff" : "var(--charcoal)",
-                    border: form.estado === s ? "none" : "1.5px solid #E2DCD3"
-                  }}>{s}</button>
+                  style={{ flex: 1, padding: 10, fontSize: 13, background: form.estado === s ? (s === "Completado" ? "var(--teal)" : "var(--coral)") : "#fff", color: form.estado === s ? "#fff" : "var(--charcoal)", border: form.estado === s ? "none" : "1.5px solid #E2DCD3" }}>{s}</button>
               ))}
             </div>
           </div>
-
           <div>
             <span className="sp-label">Agendado por</span>
             <select className="sp-input" value={form.agendadoPor} onChange={e => setForm({ ...form, agendadoPor: e.target.value })}>
@@ -1041,7 +934,6 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
                 }}>Agregar</button>
               </div>
             ) : null}
-
             {agendadores.length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                 {agendadores.map(a => (
@@ -1055,10 +947,8 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
               </div>
             )}
           </div>
-
           <div><span className="sp-label">Notas</span>
             <input className="sp-input" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Opcional" /></div>
-
           {!data && (
             <div>
               <span className="sp-label">Repetir</span>
@@ -1076,13 +966,11 @@ const ModalTrabajo = ({ data, clientePreseleccionado, clientes, agendadores, onA
               )}
             </div>
           )}
-
           <button className="sp-btn sp-btn-primary" style={{ padding: 14, marginTop: 6, opacity: guardando ? 0.6 : 1 }} onClick={handleGuardar} disabled={guardando}>
             {guardando ? "Guardando..." : (data ? "Guardar cambios" : "Agendar trabajo")}
           </button>
         </div>
       </div>
-
       {mostrarConfirmSerie && !guardando && (
         <ModalConfirmarSerie
           titulo="Editar trabajo recurrente"
@@ -1103,22 +991,15 @@ const ModalHeader = ({ titulo, onCerrar }) => (
   </div>
 );
 
-/* ---------- modal confirmación para series recurrentes ---------- */
 const ModalConfirmarSerie = ({ titulo, mensaje, onSoloEste, onFuturos, onCerrar }) => (
   <div className="sp-modalbg" onClick={onCerrar}>
     <div className="sp-modal" onClick={e => e.stopPropagation()}>
       <ModalHeader titulo={titulo} onCerrar={onCerrar} />
       <div style={{ marginTop: 16, fontSize: 14, color: "var(--charcoal)" }}>{mensaje}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 18 }}>
-        <button onClick={onSoloEste} className="sp-btn sp-btn-ghost" style={{ padding: 14 }}>
-          Solo este trabajo
-        </button>
-        <button onClick={onFuturos} className="sp-btn sp-btn-primary" style={{ padding: 14 }}>
-          Este y todos los futuros de la serie
-        </button>
-        <button onClick={onCerrar} className="sp-btn" style={{ background: "none", color: "#A6B5AF", padding: 10 }}>
-          Cancelar
-        </button>
+        <button onClick={onSoloEste} className="sp-btn sp-btn-ghost" style={{ padding: 14 }}>Solo este trabajo</button>
+        <button onClick={onFuturos} className="sp-btn sp-btn-primary" style={{ padding: 14 }}>Este y todos los futuros de la serie</button>
+        <button onClick={onCerrar} className="sp-btn" style={{ background: "none", color: "#A6B5AF", padding: 10 }}>Cancelar</button>
       </div>
     </div>
   </div>
